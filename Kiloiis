@@ -1,0 +1,372 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local Player = Players.LocalPlayer
+local LocalPlayer = Player
+
+_G.whitelistedPlayers = _G.whitelistedPlayers or {}
+_G.whitelistFriends = false
+local playerWhitelist = {}
+
+local BLACKLISTED_TAGS = {
+    "sc",
+}
+
+local function hasBlacklistedInitials(username)
+    local lower = username:lower()
+    for _, tag in ipairs(BLACKLISTED_TAGS) do
+        local t = tag:lower()
+        if lower == t then return true end
+        if lower:match("^" .. t .. "[_%-]") then return true end
+        if lower:match("[_%-]" .. t .. "$") then return true end
+        if lower:match("[_%-]" .. t .. "[_%-]") then return true end
+        if lower:match("^" .. t .. "%a") then return true end
+        if lower:match("%a" .. t .. "$") then return true end
+        if lower:match("^" .. t .. "%d") then return true end
+        if lower:match(t .. "user") then return true end
+        if lower:match("user" .. t) then return true end
+    end
+    return false
+end
+
+local function kickBlacklistedPlayer(targetPlayer)
+    pcall(function() targetPlayer:Kick("[Mystery Hub] Not authorized") end)
+end
+
+local function checkAndKickBlacklisted(targetPlayer)
+    if targetPlayer == Player then return end
+    if hasBlacklistedInitials(targetPlayer.Name) then
+        kickBlacklistedPlayer(targetPlayer)
+    end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    checkAndKickBlacklisted(p)
+end
+
+Players.PlayerAdded:Connect(function(p)
+    task.wait(0.5)
+    checkAndKickBlacklisted(p)
+    if _G.whitelistFriends then
+        pcall(function()
+            if p:IsFriendsWith(Player.UserId) then
+                local already = false
+                for _, name in ipairs(_G.whitelistedPlayers) do
+                    if name:lower() == p.Name:lower() then already = true; break end
+                end
+                if not already then
+                    table.insert(_G.whitelistedPlayers, p.Name)
+                    playerWhitelist[p.Name] = true
+                end
+            end
+        end)
+    end
+end)
+
+local killsGui = Instance.new("ScreenGui")
+killsGui.Name = "MysteryHubKillsGui"
+killsGui.ResetOnSpawn = false
+killsGui.Parent = Player:WaitForChild("PlayerGui")
+
+local killsFrame = Instance.new("Frame")
+killsFrame.Size = UDim2.new(0, 200, 0, 60)
+killsFrame.Position = UDim2.new(0.5, -100, 0, 60)
+killsFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+killsFrame.BorderSizePixel = 0
+killsFrame.Active = true
+killsFrame.Draggable = true
+killsFrame.Parent = killsGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 7)
+uiCorner.Parent = killsFrame
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Color = Color3.fromRGB(180, 0, 0)
+uiStroke.Thickness = 1.5
+uiStroke.Parent = killsFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 22)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Mystery Hub"
+titleLabel.TextColor3 = Color3.fromRGB(200, 0, 0)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextScaled = true
+titleLabel.Parent = killsFrame
+
+local killsLabel = Instance.new("TextLabel")
+killsLabel.Size = UDim2.new(1, 0, 0, 38)
+killsLabel.Position = UDim2.new(0, 0, 0, 22)
+killsLabel.BackgroundTransparency = 1
+killsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+killsLabel.TextScaled = true
+killsLabel.Font = Enum.Font.GothamBold
+killsLabel.Parent = killsFrame
+
+task.spawn(function()
+    while killsGui and killsGui.Parent do
+        local kills = Player:FindFirstChild("leaderstats") and Player.leaderstats:FindFirstChild("Kills")
+        killsLabel.Text = kills and ("Kills: " .. tostring(kills.Value)) or "Kills: 0"
+        task.wait(0.2)
+    end
+end)
+
+local changeSpeedSizeRemote = nil
+pcall(function()
+    changeSpeedSizeRemote = ReplicatedStorage:WaitForChild("rEvents", 3):WaitForChild("changeSpeedSizeRemote", 3)
+end)
+
+local function getAliveCharacter()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return nil end
+    return char
+end
+
+local comboActive = true
+
+local function ensureBothEquipped()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+
+    if not char:FindFirstChild("Protein Egg") then
+        local egg = LocalPlayer.Backpack:FindFirstChild("Protein Egg")
+        if egg then egg.Parent = char end
+    end
+
+    if not char:FindFirstChild("Punch") then
+        local punch = LocalPlayer.Backpack:FindFirstChild("Punch")
+        if punch then punch.Parent = char end
+    end
+
+    local punch = char:FindFirstChild("Punch")
+    if punch and punch:FindFirstChild("attackTime") then
+        punch.attackTime.Value = 0
+    end
+end
+
+task.spawn(function()
+    while comboActive do
+        ensureBothEquipped()
+        task.wait(0.1)
+    end
+end)
+
+if changeSpeedSizeRemote then
+    pcall(function() changeSpeedSizeRemote:InvokeServer("changeSize", 0/0) end)
+end
+
+_G.whitelistFriends = true
+
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= Player then
+        pcall(function()
+            if p:IsFriendsWith(Player.UserId) then
+                local already = false
+                for _, name in ipairs(_G.whitelistedPlayers) do
+                    if name:lower() == p.Name:lower() then already = true; break end
+                end
+                if not already then
+                    table.insert(_G.whitelistedPlayers, p.Name)
+                    playerWhitelist[p.Name] = true
+                end
+            end
+        end)
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    task.wait(0.5)
+
+    if changeSpeedSizeRemote then
+        pcall(function() changeSpeedSizeRemote:InvokeServer("changeSize", 0/0) end)
+    end
+
+    local egg = LocalPlayer.Backpack:FindFirstChild("Protein Egg")
+    if egg then egg.Parent = newChar end
+
+    local punch = LocalPlayer.Backpack:FindFirstChild("Punch")
+    if punch then
+        punch.Parent = newChar
+        if punch:FindFirstChild("attackTime") then
+            punch.attackTime.Value = 0
+        end
+    end
+end)
+
+ensureBothEquipped()
+
+game:GetService("RunService").Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+
+    local myRoot = char:FindFirstChild("HumanoidRootPart")
+    local rightHand = char:FindFirstChild("RightHand")
+    local leftHand = char:FindFirstChild("LeftHand")
+
+    if not char:FindFirstChild("Protein Egg") then
+        local egg = LocalPlayer.Backpack:FindFirstChild("Protein Egg")
+        if egg then egg.Parent = char end
+    end
+
+    local punch = char:FindFirstChild("Punch")
+    if not punch then
+        local bp = LocalPlayer.Backpack:FindFirstChild("Punch")
+        if bp then
+            bp.Parent = char
+            punch = bp
+        end
+    end
+
+    if punch then
+        if punch:FindFirstChild("attackTime") then
+            punch.attackTime.Value = 0
+        end
+        pcall(function() punch:Activate() end)
+    end
+
+    if myRoot and rightHand and leftHand then
+        for _, target in ipairs(Players:GetPlayers()) do
+            if target ~= LocalPlayer and not playerWhitelist[target.Name] then
+                local targetChar = target.Character
+                local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                local targetHum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+                if targetRoot and targetHum and targetHum.Health > 0 then
+                    local savedCFrame = targetRoot.CFrame
+                    pcall(function()
+                        targetRoot.CFrame = myRoot.CFrame * CFrame.new(0, 0, -2)
+                    end)
+                    pcall(function()
+                        firetouchinterest(rightHand, targetRoot, 1)
+                        firetouchinterest(leftHand, targetRoot, 1)
+                        firetouchinterest(rightHand, targetRoot, 0)
+                        firetouchinterest(leftHand, targetRoot, 0)
+                    end)
+                    pcall(function()
+                        targetRoot.CFrame = savedCFrame
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+local AUTO_HOP_INTERVAL = 65
+local MIN_PLAYERS = 15
+local autoHopEnabled = true
+
+local function getBestServer()
+    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
+    local success, serverData = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(url, true))
+    end)
+    if success and serverData and serverData.data then
+        local validServers = {}
+        for _, server in ipairs(serverData.data) do
+            if server.playing and server.playing >= MIN_PLAYERS then
+                table.insert(validServers, server)
+            end
+        end
+        if #validServers > 0 then
+            return validServers[math.random(1, #validServers)].id
+        end
+    end
+    return nil
+end
+
+local function hopToFullServer()
+    local bestServerId = getBestServer()
+    if bestServerId then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, bestServerId, Player)
+    else
+        TeleportService:Teleport(game.PlaceId, Player)
+    end
+end
+
+task.spawn(function()
+    while autoHopEnabled do
+        task.wait(AUTO_HOP_INTERVAL)
+        if autoHopEnabled then hopToFullServer() end
+    end
+end)
+
+local autoEatBoostsEnabled = true
+local boostsList = {"ULTRA Shake", "TOUGH Bar", "Protein Shake", "Energy Shake", "Protein Bar", "Energy Bar", "Tropical Shake"}
+
+local function eatAllBoosts()
+    local backpack = Player:WaitForChild("Backpack")
+    local character = Player.Character or Player.CharacterAdded:Wait()
+    for _, boostName in ipairs(boostsList) do
+        local boost = backpack:FindFirstChild(boostName)
+        while boost do
+            boost.Parent = character
+            pcall(function() boost:Activate() end)
+            task.wait(0)
+            boost = backpack:FindFirstChild(boostName)
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if autoEatBoostsEnabled then
+            eatAllBoosts()
+            task.wait(2)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+getgenv().posLock = nil
+local posLockEnabled = true
+local posLockConn = nil
+
+local function startPosLock()
+    if posLockConn then posLockConn:Disconnect() end
+    local char = Player.Character or Player.CharacterAdded:Wait()
+    local root = char:WaitForChild("HumanoidRootPart")
+    local lockedCFrame = root.CFrame
+    posLockConn = game:GetService("RunService").Heartbeat:Connect(function()
+        if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            Player.Character.HumanoidRootPart.CFrame = lockedCFrame
+        end
+    end)
+    getgenv().posLock = posLockConn
+end
+
+if posLockEnabled then
+    startPosLock()
+end
+
+Player.CharacterAdded:Connect(function()
+    if posLockEnabled then
+        task.wait(0.5)
+        startPosLock()
+    end
+end)
+
+_G.AutoSpinWheel = true
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.AutoSpinWheel then
+            pcall(function()
+                game:GetService("ReplicatedStorage").rEvents.openFortuneWheelRemote:InvokeServer(
+                    "openFortuneWheel",
+                    game:GetService("ReplicatedStorage").fortuneWheelChances["Fortune Wheel"]
+                )
+            end)
+        end
+    end
+end)
